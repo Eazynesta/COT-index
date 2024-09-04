@@ -1,0 +1,119 @@
+//@version=5
+import TradingView/LibraryCOT/2
+
+indicator('Sovren COT Smart Index', format=format.volume, precision=0)
+
+// User Inputs for customization
+i_dataSource = input.string('Futures Only', 'Data Source', ['Futures Only', 'Futures and Options'])
+i_showCommercials = input.bool(true, "Show Commercials")
+i_showNonCommercials = input.bool(true, "Show Non-Commercials")
+i_showRetail = input.bool(true, "Show Retail")
+lookbackPeriod = input.int(52, "Lookback Period for Normalization", minval=1)  // Lookback period for min/max
+
+// CFTC Market Codes and mapping function
+f_getTickerCode(pair) =>
+    string code = switch pair
+        'GOLD' => '088691'
+        'GC1!' => '088691'
+        'SILVER' => '084691'
+        'SI1!' => '084691'
+        'PLATINUM' => '076651'
+        'PL1!' => '076651'
+        'PALLADIUM' => '075651'
+        'PA1!' => '075651'
+        'ALUMINUM' => '191651'
+        'AL1!' => '191651'
+        'COPPER' => '085692'
+        'HG1!' => '085692'
+        'CRUDE OIL' => '06765A'
+        'CL1!' => '06765A'
+        'USOIL' => '06765A'
+        'NATURAL GAS' => '023391'
+        'NG1!' => '023391'
+        'SOYBEAN OIL' => '007601'
+        'ZL1!' => '007601'
+        'S&P 500' => '13874+'
+        'S&P 500 Mini' => '13874A'
+        'ES1!' => '13874A'
+        'Dow Jones' => '12460+'
+        'YM1!' => '12460+'
+        'NIKKEI' => '240741'
+        'NKD1!' => '240741'
+        'NASDAQ' => '20974+'
+        'NQ1!' => '20974+'
+        'NASDAQ Mini' => '209742'
+        'RUSSELL 2000' => '239742'
+        'RTY1!' => '239742'
+        'Volatility S&P 500' => '1170E1'
+        'VIX1!' => '1170E1'
+        'CHF1!' => '6S1!'
+        '6S1!' => '092741'
+        'GBP1!' => '6B1!'
+        '6B1!' => '6B1!'
+        'JPY1!' => '097741'
+        '6J1!' => '097741'
+        'EUR1!' => '6E1!'
+        '6E1!' => '6E1!'
+        'NZD1!' => '6N1!'
+        '6N1!' => '6N1!'
+        'CAD1!' => '6C1!'
+        '6C1!' => '6C1!'
+        'MXN' => '6M1!'
+        '6M1!' => '6M1!'
+        'EURUSD' => '099741'
+        'USDCAD' => '090741'
+        'USDJPY' => '097741'
+        'USDMXN' => '095742'
+        'USDSGD' => '122742'
+        'USDHKD' => '098741'
+        'AUDUSD' => '232741'
+        'AUDCAD' => '235741'
+        'AUDJPY' => '233741'
+        'EURAUD' => '136741'
+        'EURCAD' => '134741'
+        'EURJPY' => '131741'
+        'EURGBP' => '132741'
+        'NZDUSD' => '098662'
+        'NZDCAD' => '091741'
+        'NZDJPY' => '097662'
+        => ''
+    code
+
+
+// Function to calculate net positions for any given category
+dNetPosition(asCode, metricName) =>
+    longTicker = LibraryCOT.COTTickerid("Legacy", asCode, false, metricName, "Long", "All")
+    shortTicker = LibraryCOT.COTTickerid("Legacy", asCode, false, metricName, "Short", "All")
+    comLong = request.security(longTicker, 'W', close, lookahead = barmerge.lookahead_on)
+    comShort = request.security(shortTicker, 'W', close, lookahead = barmerge.lookahead_on)
+    comLong - comShort
+
+// Selecting the right ticker and calculating net positions
+ticker = f_getTickerCode(syminfo.ticker)
+netCommercials = i_showCommercials ? dNetPosition(ticker, "Commercial Positions") : na
+netNonCommercials = i_showNonCommercials ? dNetPosition(ticker, "Noncommercial Positions") : na
+netRetail = i_showRetail ? dNetPosition(ticker, "Nonreportable Positions") : na
+
+// Calculate Min and Max values over the lookback period
+minCommercials = ta.lowest(netCommercials, lookbackPeriod)
+maxCommercials = ta.highest(netCommercials, lookbackPeriod)
+
+minNonCommercials = ta.lowest(netNonCommercials, lookbackPeriod)
+maxNonCommercials = ta.highest(netNonCommercials, lookbackPeriod)
+
+minRetail = ta.lowest(netRetail, lookbackPeriod)
+maxRetail = ta.highest(netRetail, lookbackPeriod)
+
+// Normalize the net positions to a scale of 0-100
+normCommercials = 100 * (netCommercials - minCommercials) / (maxCommercials - minCommercials)
+normNonCommercials = 100 * (netNonCommercials - minNonCommercials) / (maxNonCommercials - minNonCommercials)
+normRetail = 100 * (netRetail - minRetail) / (maxRetail - minRetail)
+
+// Plotting normalized data
+plot(i_showCommercials ? normCommercials : na, "Commercials Index (0-100)", color=color.new(color.green, 0), linewidth=1)
+plot(i_showNonCommercials ? normNonCommercials : na, "Non-Commercials Index (0-100)", color=color.new(color.blue, 0), linewidth=1)
+plot(i_showRetail ? normRetail : na, "Retail Index (0-100)", color=color.new(color.red, 0), linewidth=1)
+
+hline(20, "Horizontal Line at 20", color=color.gray, linewidth=1)
+hline(80, "Horizontal Line at 80", color=color.gray, linewidth=1)
+
